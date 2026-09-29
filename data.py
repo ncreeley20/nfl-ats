@@ -110,6 +110,50 @@ def get_pbp_data(seasons: list[int]):
   )
 
 
+"""
+Given weekly team stats gets the pregame stats for a team and week
+NOTE: everything is meaned, unweighted which is incorrect 
+ALSO, turnover margin is the only summed column
+"""
+def get_pregame_team_stats(team_stats, team, season, week):
+  prior = team_stats.filter(
+    (pl.col("season") == season) & 
+    (pl.col("team") == team) &
+    (pl.col("week") < week)
+  )
+
+  return prior.select([
+    pl.col("passing_epa").mean(),
+    pl.col("rushing_epa").mean(),
+    pl.col("penalty_yards").mean(),
+    pl.col("turnover_margin").sum(),
+    pl.col("def_pressures").mean()
+  ])
+ 
+"""
+Given weekly pbp stats gets the pregame stats for a team and week
+NOTE: columns are meaned, statistically incorrect and gives more weight to individual games 
+"""
+def get_pregame_pbp_stats(pbp_stats, team, season, week):
+  prior = pbp_stats.filter(
+      (pl.col("season") == season) & 
+      (pl.col("team") == team) &
+      (pl.col("week") < week)
+    )
+  
+  return prior.select([
+    pl.col("success_rate").mean(),
+    pl.col("3d_conversion_rate").mean(),
+    pl.col("redzone_efficency").mean(),
+    pl.col("def_success_rate").mean(),
+    pl.col("def_epa").mean(),
+    pl.col("def_rush_epa").mean(),
+    pl.col("def_pass_epa").mean()
+  ])
+
+
+
+
 
 
 
