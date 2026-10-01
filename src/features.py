@@ -1,11 +1,13 @@
-from data import get_schedule_data, get_team_data, get_pbp_data, get_pregame_team_stats, get_pregame_pbp_stats
-from utils import generate_season_list
+from src.data import get_schedule_data, get_team_data, get_pbp_data, get_pregame_team_stats, get_pregame_pbp_stats
+from src.utils import generate_season_list
 import polars as pl
 
-"""
-GOAL: build one dataframe that holds every game back to certain year with each feature for both teams,
-with y = home_score - away_score
-"""
+
+IDENTIFYING_FEATURES = [
+  "home_team",
+  "away_team",
+  "season",
+]
 
 """
 Builds the feature table enriching it with the pre-game features,
@@ -88,6 +90,29 @@ def build_feature_set(start: int, stop: int):
     feature_rows.append(row)
 
   return pl.DataFrame(feature_rows)
+
+"""
+Takes the feature set from above and removes atrributes
+not needed for training. Splits the data set based on split 
+which is an inclusive year
+"""
+def build_test_train_split(feature_set: pl.DataFrame, split: int): 
+
+  train = feature_set.filter(pl.col("season") < split)
+
+  test = feature_set.filter(pl.col("season") >= split)
+
+  # drop out identifying features 
+  clean_train = train.drop(IDENTIFYING_FEATURES)
+  clean_test = test.drop(IDENTIFYING_FEATURES)
+
+  X_train = clean_train.drop("y")
+  y_train = clean_train["y"]
+
+  X_test = clean_test.drop("y")
+  y_test = clean_test["y"]
+
+  return X_train, y_train, X_test, y_test
 
 
 
