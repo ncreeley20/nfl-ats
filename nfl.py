@@ -1,11 +1,12 @@
 import typer
+import nflreadpy as nfl 
 import polars as pl
 from typing import Optional
 from rich.console import Console
 from src.utils import generate_season_list
 from src.features import build_feature_set, build_test_train_split, build_training_set
 from src.model import train_model, evaluate_model, save_model, load_model
-from src.utils import print_predictions
+from src.utils import print_predictions, print_feature_set
 
 DEFAULT_MODEL = "models/nfl_ats.json"
 
@@ -53,7 +54,7 @@ def train(start: int, end: int, model_name:Optional[str] = None, test_year: Opti
 
 
 @app.command(help="Predict the current week for most recent NFL season.")
-def predict(model_name: Optional[str] = None):
+def predict(week: int, model_name: Optional[str] = None):
 
   path = DEFAULT_MODEL if model_name is None else f"models/{model_name}"
 
@@ -61,7 +62,7 @@ def predict(model_name: Optional[str] = None):
     model = load_model(path)
 
   with console.status("[bold green]Predicting games...[/bold green]"):
-    features = build_feature_set([NFL_SEASON], current=True)
+    features = build_feature_set([NFL_SEASON], recent_week=week)
     X, _ = build_training_set(features)
 
     predictions = model.predict(X)
@@ -73,8 +74,17 @@ def predict(model_name: Optional[str] = None):
   ])
 
   # print results 
-  print(f"//////////////////////////////////////// Predictions for Week {results["week"][0]} ////////////////////////////////////////")
+  print(f"//////////////////////////////////////// Predictions for Week {week} ////////////////////////////////////////")
   print_predictions(results)
+
+@app.command(help="Get this weeks matchup stats and features the model will use to predict games")
+def matchups(week:int): 
+
+  with console.status("[bold green] Getting matchups..."):
+    features = build_feature_set([NFL_SEASON], recent_week=week)
+
+  # print out features
+  print_feature_set(features)
 
 
 if __name__ == "__main__": 

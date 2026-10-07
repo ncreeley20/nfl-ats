@@ -1,5 +1,6 @@
 from src.data import get_schedule_data, get_team_data, get_pbp_data, get_pregame_team_stats, get_pregame_pbp_stats
 import polars as pl
+from typing import Optional
 from src.utils import to_float
 
 
@@ -15,16 +16,15 @@ Builds the feature table enriching it with the pre-game features,
 :stop: inclusive end year 
 :current: if included then only returns the most recent week rows
 """
-def build_feature_set(seasons: list[int], current: bool = False):
+def build_feature_set(seasons: list[int],  recent_week: Optional[int] = None):
 
   # get all raw weekly data 
   schedule = get_schedule_data(seasons)
   pbp = get_pbp_data(seasons)
   team_stats = get_team_data(seasons)
 
-  if current: 
-    max_week = schedule["week"].max()
-    schedule = schedule.filter(pl.col("week") == max_week)
+  if recent_week is not None: 
+    schedule = schedule.filter(pl.col("week") == recent_week)
 
   feature_rows = []
   for game in schedule.iter_rows(named=True):
@@ -32,28 +32,31 @@ def build_feature_set(seasons: list[int], current: bool = False):
     home_team = game["home_team"]
     away_team = game["away_team"]
     div_game = game["div_game"] == 1
-    week = game["week"]
+    game_week = game["week"]
     season = game["season"]
 
+    # spread needs to be flipped
+    spread = -to_float(game["spread_line"])
+
     # grab all pregame data
-    home_pbp_stats = get_pregame_pbp_stats(pbp, home_team, season, week)
-    home_team_stats = get_pregame_team_stats(team_stats, home_team, season, week)
+    home_pbp_stats = get_pregame_pbp_stats(pbp, home_team, season, game_week)
+    home_team_stats = get_pregame_team_stats(team_stats, home_team, season, game_week)
 
-    away_pbp_stats = get_pregame_pbp_stats(pbp, away_team, season, week)
-    away_team_stats = get_pregame_team_stats(team_stats, away_team, season, week)
+    away_pbp_stats = get_pregame_pbp_stats(pbp, away_team, season, game_week)
+    away_team_stats = get_pregame_team_stats(team_stats, away_team, season, game_week)
 
-    # get y 
-    home_covered = game["result"] + game["spread_line"] > 0
+    # get y (if current then there is no y) 
+    home_covered = game["result"] + spread >= 0 if recent_week is None else False
 
     # build out row 
     row = {
 
       # schedule/identifying features 
       "season": season,
-      "week": week,
+      "week": game_week,
       "home_team": home_team, 
       "away_team": away_team,
-      "spread": to_float(game["spread_line"]),
+      "spread": spread,
       "is_div_game": div_game, 
       # "temp": game["temp"],
       # "wind": game["wind"],
