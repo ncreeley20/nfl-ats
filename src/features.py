@@ -1,6 +1,6 @@
 from src.data import get_schedule_data, get_team_data, get_pbp_data, get_pregame_team_stats, get_pregame_pbp_stats
-from src.utils import generate_season_list
 import polars as pl
+from src.utils import to_float
 
 
 IDENTIFYING_FEATURES = [
@@ -13,15 +13,18 @@ IDENTIFYING_FEATURES = [
 Builds the feature table enriching it with the pre-game features,
 :start: inclusive start year 
 :stop: inclusive end year 
+:current: if included then only returns the most recent week rows
 """
-def build_feature_set(start: int, stop: int):
-
-  seasons = generate_season_list(start, stop)
+def build_feature_set(seasons: list[int], current: bool = False):
 
   # get all raw weekly data 
   schedule = get_schedule_data(seasons)
   pbp = get_pbp_data(seasons)
   team_stats = get_team_data(seasons)
+
+  if current: 
+    max_week = schedule["week"].max()
+    schedule = schedule.filter(pl.col("week") == max_week)
 
   feature_rows = []
   for game in schedule.iter_rows(named=True):
@@ -39,6 +42,8 @@ def build_feature_set(start: int, stop: int):
     away_pbp_stats = get_pregame_pbp_stats(pbp, away_team, season, week)
     away_team_stats = get_pregame_team_stats(team_stats, away_team, season, week)
 
+    # get y 
+    home_covered = game["result"] + game["spread_line"] > 0
 
     # build out row 
     row = {
@@ -48,48 +53,112 @@ def build_feature_set(start: int, stop: int):
       "week": week,
       "home_team": home_team, 
       "away_team": away_team,
-      "spread": game["spread_line"],
+      "spread": to_float(game["spread_line"]),
       "is_div_game": div_game, 
-      "temp": game["temp"],
-      "wind": game["wind"],
+      # "temp": game["temp"],
+      # "wind": game["wind"],
 
       # y 
-      "y": game["result"],
+      "y": int(home_covered),
 
-      # pbp stats
-      "home_success_rate": home_pbp_stats["success_rate"][0],
-      "home_3d_conversion_rate": home_pbp_stats["3d_conversion_rate"][0],
-      "home_redzone_efficency": home_pbp_stats["redzone_efficency"][0],
-      "home_def_success_rate": home_pbp_stats["def_success_rate"][0],
-      "home_def_epa": home_pbp_stats["def_epa"][0],
-      "home_def_rush_epa": home_pbp_stats["def_rush_epa"][0],
-      "home_def_pass_epa": home_pbp_stats["def_pass_epa"][0],
+      # ============================================================
+      # MATCHUP DIFFERENCES
+      # Positive = home team advantage
+      # ============================================================
 
-      "away_success_rate": away_pbp_stats["success_rate"][0],
-      "away_3d_conversion_rate": away_pbp_stats["3d_conversion_rate"][0],
-      "away_redzone_efficency": away_pbp_stats["redzone_efficency"][0],
-      "away_def_success_rate": away_pbp_stats["def_success_rate"][0],
-      "away_def_epa": away_pbp_stats["def_epa"][0],
-      "away_def_rush_epa": away_pbp_stats["def_rush_epa"][0],
-      "away_def_pass_epa": away_pbp_stats["def_pass_epa"][0],
+      # Offensive performance
+      "success_rate_diff": (
+          to_float(home_pbp_stats["success_rate"][0])
+          - to_float(away_pbp_stats["success_rate"][0])
+      ),
 
-      # team stats 
-      "home_off_passing_epa": home_team_stats["passing_epa"][0],
-      "home_off_rushing_epa": home_team_stats["rushing_epa"][0],
-      "home_penalty_yards": home_team_stats["penalty_yards"][0],
-      "home_turnover_margin": home_team_stats["turnover_margin"][0],
-      "home_def_pressures": home_team_stats["def_pressures"][0],
+      "3d_conversion_rate_diff": (
+          to_float(home_pbp_stats["3d_conversion_rate"][0])
+          - to_float(away_pbp_stats["3d_conversion_rate"][0])
+      ),
 
-      "away_off_passing_epa": away_team_stats["passing_epa"][0],
-      "away_off_rushing_epa": away_team_stats["rushing_epa"][0],
-      "away_penalty_yards": away_team_stats["penalty_yards"][0],
-      "away_turnover_margin": away_team_stats["turnover_margin"][0],
-      "away_def_pressures": away_team_stats["def_pressures"][0],
+      "redzone_efficiency_diff": (
+          to_float(home_pbp_stats["redzone_efficency"][0])
+          - to_float(away_pbp_stats["redzone_efficency"][0])
+      ),
+
+      "off_passing_epa_diff": (
+          to_float(home_team_stats["passing_epa"][0])
+          - to_float(away_team_stats["passing_epa"][0])
+      ),
+
+      "off_rushing_epa_diff": (
+          to_float(home_team_stats["rushing_epa"][0])
+          - to_float(away_team_stats["rushing_epa"][0])
+      ),
+
+      # Defensive performance
+      "def_success_rate_diff": (
+          to_float(home_pbp_stats["def_success_rate"][0])
+          - to_float(away_pbp_stats["def_success_rate"][0])
+      ),
+
+      "def_epa_diff": (
+          to_float(home_pbp_stats["def_epa"][0])
+          - to_float(away_pbp_stats["def_epa"][0])
+      ),
+
+      "def_rush_epa_diff": (
+          to_float(home_pbp_stats["def_rush_epa"][0])
+          - to_float(away_pbp_stats["def_rush_epa"][0])
+      ),
+
+      "def_pass_epa_diff": (
+          to_float(home_pbp_stats["def_pass_epa"][0])
+          - to_float(away_pbp_stats["def_pass_epa"][0])
+      ),
+
+      "def_pressures_diff": (
+          to_float(home_team_stats["def_pressures"][0])
+          - to_float(away_team_stats["def_pressures"][0])
+      ),
+
+      # Turnovers
+      "turnover_margin_diff": (
+          to_float(home_team_stats["turnover_margin"][0])
+          - to_float(away_team_stats["turnover_margin"][0])
+      ),
+
+      # # Penalties — lower is better, so reverse the subtraction
+      # "penalty_yards_advantage": (
+      #     to_float(away_team_stats["penalty_yards"][0])
+      #     - to_float(home_team_stats["penalty_yards"][0])
+      # ),
+
+      # ============================================================
+      # OFFENSE VS DEFENSE MATCHUPS
+      # Positive = home team matchup advantage
+      # ============================================================
+
+      "home_pass_off_vs_away_pass_def": (
+          to_float(home_team_stats["passing_epa"][0])
+          - to_float(away_pbp_stats["def_pass_epa"][0])
+      ),
+
+      "away_pass_off_vs_home_pass_def": (
+          to_float(away_team_stats["passing_epa"][0])
+          - to_float(home_pbp_stats["def_pass_epa"][0])
+      ),
+
+      "home_rush_off_vs_away_rush_def": (
+          to_float(home_team_stats["rushing_epa"][0])
+          - to_float(away_pbp_stats["def_rush_epa"][0])
+      ),
+
+      "away_rush_off_vs_home_rush_def": (
+          to_float(away_team_stats["rushing_epa"][0])
+          - to_float(home_pbp_stats["def_rush_epa"][0])
+      ),
     }
 
     feature_rows.append(row)
 
-  return pl.DataFrame(feature_rows)
+  return pl.DataFrame(feature_rows, infer_schema_length=None).sort(["season", "week"])
 
 """
 Takes the feature set from above and removes atrributes
@@ -97,7 +166,7 @@ not needed for training. Splits the data set based on split
 which is an inclusive year
 """
 def build_test_train_split(feature_set: pl.DataFrame, split: int): 
-
+  
   train = feature_set.filter(pl.col("season") < split)
 
   test = feature_set.filter(pl.col("season") >= split)
@@ -113,6 +182,18 @@ def build_test_train_split(feature_set: pl.DataFrame, split: int):
   y_test = clean_test["y"]
 
   return X_train, y_train, X_test, y_test
+
+"""
+Simple function to get just one split (no test)
+"""
+def build_training_set(feature_set: pl.DataFrame): 
+
+  cleaned = feature_set.drop(IDENTIFYING_FEATURES)
+
+  X_train = cleaned.drop("y")
+  y_train = cleaned["y"]
+
+  return X_train, y_train
 
 
 

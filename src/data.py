@@ -7,8 +7,8 @@ Grabs schedule data and filters out unneeded cols
 def get_schedule_data(seasons: list[int]): 
   df = nfl.load_schedules(seasons=seasons)
 
-  # filter out postseason games 
-  return df.filter(pl.col("game_type") == "REG").select([
+  # filter out postseason games and week 1 games
+  return df.filter((pl.col("game_type") == "REG") & (pl.col("week") != 1)).select([
     # identifying data 
     "season",
     "week",
